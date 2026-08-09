@@ -2,9 +2,22 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { buildSettings, clearSettingsCache, getSettings } from '../src/config.js';
+import {
+  applyDotEnvFiles,
+  buildSettings,
+  clearSettingsCache,
+  dotEnvSearchPaths,
+  getSettings,
+  globalEnvPath,
+} from '../src/config.js';
 import { ConfigurationError } from '../src/errors.js';
-import { clearManagedEnv, configureEnv, makeRepoRoot, resetEnvironment } from './helpers.js';
+import {
+  clearManagedEnv,
+  configureEnv,
+  makeRepoRoot,
+  makeTempDir,
+  resetEnvironment,
+} from './helpers.js';
 
 afterEach(() => {
   resetEnvironment();
@@ -89,6 +102,59 @@ describe('settings validation', () => {
     clearSettingsCache();
 
     expect(getSettings().sonarqubeUrl).toBe('https://from-env.example');
+  });
+
+  it('layers .env files instead of stopping at the first one found', () => {
+    // Regression: an unrelated project .env (most projects have one) used to
+    // shadow the global config entirely, so a plugin install failed to start
+    // despite valid global credentials sitting in ~/.config.
+    const dir = makeTempDir();
+    const projectEnv = join(dir, 'project.env');
+    const globalEnv = join(dir, 'global.env');
+    writeFileSync(projectEnv, 'DATABASE_URL=postgres://localhost/app\n');
+    writeFileSync(globalEnv, 'SONARQUBE_URL=https://global.example\nSONARQUBE_TOKEN=global\n');
+
+    const env = {};
+    applyDotEnvFiles([projectEnv, globalEnv], env);
+
+    expect(env).toEqual({
+      DATABASE_URL: 'postgres://localhost/app',
+      SONARQUBE_URL: 'https://global.example',
+      SONARQUBE_TOKEN: 'global',
+    });
+  });
+
+  it('lets the earlier .env win per key when both define one', () => {
+    const dir = makeTempDir();
+    const projectEnv = join(dir, 'project.env');
+    const globalEnv = join(dir, 'global.env');
+    writeFileSync(projectEnv, 'SONARQUBE_URL=https://project.example\n');
+    writeFileSync(globalEnv, 'SONARQUBE_URL=https://global.example\nSONARQUBE_TOKEN=global\n');
+
+    const env = {};
+    applyDotEnvFiles([projectEnv, globalEnv], env);
+
+    // The nearer file wins on the key it sets; the global still fills the gap.
+    expect(env).toEqual({
+      SONARQUBE_URL: 'https://project.example',
+      SONARQUBE_TOKEN: 'global',
+    });
+  });
+
+  it('never overwrites a variable already present in the environment', () => {
+    const dir = makeTempDir();
+    const envFile = join(dir, 'a.env');
+    writeFileSync(envFile, 'SONARQUBE_URL=https://from-file.example\n');
+
+    const env = { SONARQUBE_URL: 'https://from-shell.example' };
+    applyDotEnvFiles([envFile], env);
+
+    expect(env['SONARQUBE_URL']).toBe('https://from-shell.example');
+  });
+
+  it('includes the global config directory in the search path', () => {
+    expect(dotEnvSearchPaths().at(-1)).toBe(globalEnvPath());
+    expect(globalEnvPath()).toMatch(/sonarqube-mcp[/\\]\.env$/);
   });
 
   it('memoizes getSettings', () => {

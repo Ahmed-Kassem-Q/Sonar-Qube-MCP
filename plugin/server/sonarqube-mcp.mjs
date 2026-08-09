@@ -31699,8 +31699,14 @@ function globalEnvPath() {
 }
 function loadDotEnv() {
   if (process.env["MCP_SKIP_DOTENV"] === "1") return;
-  const envPath = dotEnvSearchPaths().find((candidate) => existsSync(candidate));
-  if (envPath === void 0) return;
+  applyDotEnvFiles(dotEnvSearchPaths());
+}
+function applyDotEnvFiles(paths, env = process.env) {
+  for (const candidate of paths) {
+    if (existsSync(candidate)) applyDotEnvFile(candidate, env);
+  }
+}
+function applyDotEnvFile(envPath, env) {
   let raw;
   try {
     raw = readFileSync(envPath, "utf-8");
@@ -31713,12 +31719,12 @@ function loadDotEnv() {
     const eq = trimmed.indexOf("=");
     if (eq === -1) continue;
     const key = trimmed.slice(0, eq).trim();
-    if (!key || key in process.env) continue;
+    if (!key || key in env) continue;
     let value = trimmed.slice(eq + 1).trim();
     if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
       value = value.slice(1, -1);
     }
-    process.env[key] = value;
+    env[key] = value;
   }
 }
 function expandUserPath(value) {

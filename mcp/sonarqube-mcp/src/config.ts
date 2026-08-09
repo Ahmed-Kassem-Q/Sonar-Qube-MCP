@@ -21,8 +21,7 @@ import { ConfigurationError } from './errors.js';
 import { LOG_LEVELS, type LogLevel } from './logging.js';
 
 /**
- * Locations searched for a `.env` file, most specific first. The first file
- * that exists wins.
+ * Locations searched for `.env` files, most specific first.
  *
  * 1. **Working directory** — the project root when Claude Code launches the
  *    server, so a single project can override the global config.
@@ -31,8 +30,14 @@ import { LOG_LEVELS, type LogLevel } from './logging.js';
  *    apply when running the server by hand from inside the package, a trap that
  *    reads as broken since the file sits right next to `.env.example`.
  * 3. **`~/.config/sonarqube-mcp/.env`** — the global location, used when the
- *    server is installed as a plugin or globally, where neither of the first
- *    two paths points anywhere a user would think to edit.
+ *    server is installed as a plugin, where neither of the first two paths
+ *    points anywhere a user would think to edit.
+ *
+ * Every existing file is applied, in this order, and an earlier file wins on a
+ * per-key basis. They are *layered*, not chosen between: stopping at the first
+ * file that exists would mean any project with an unrelated `.env` of its own —
+ * which is most of them — shadowed the global config completely and the server
+ * failed to start despite valid global credentials.
  */
 export function dotEnvSearchPaths(): string[] {
   // dist/config.js -> dist -> package root
@@ -56,26 +61,45 @@ export function globalEnvPath(): string {
 }
 
 /**
- * Seed `process.env` from the first `.env` file found, without clobbering
- * variables that are already set.
+ * Seed `process.env` from every `.env` file found, without clobbering variables
+ * that are already set.
  *
- * Real environment variables deliberately win over `.env` entries, so a value
- * in `.mcp.json`'s `env` block or exported in the shell always takes
- * precedence over the file.
+ * Because nothing already set is overwritten, and files are applied in
+ * most-specific-first order, an earlier file wins per key and real environment
+ * variables win over all of them — so a value exported in the shell or passed
+ * in `.mcp.json`'s `env` block always takes precedence.
  */
 function loadDotEnv(): void {
   // Tests set this so a developer's real .env cannot leak live credentials
   // into cases that deliberately unset them.
   if (process.env['MCP_SKIP_DOTENV'] === '1') return;
 
-  const envPath = dotEnvSearchPaths().find((candidate) => existsSync(candidate));
-  if (envPath === undefined) return;
+  applyDotEnvFiles(dotEnvSearchPaths());
+}
 
+/**
+ * Apply each existing file in `paths` to `env`, earlier files winning per key.
+ *
+ * Exported so the layering can be tested against fixture paths and a throwaway
+ * environment, rather than through {@link getSettings}, whose result depends on
+ * whichever `.env` files happen to exist on the machine running the tests.
+ */
+export function applyDotEnvFiles(
+  paths: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  for (const candidate of paths) {
+    if (existsSync(candidate)) applyDotEnvFile(candidate, env);
+  }
+}
+
+/** Apply one `.env` file, leaving keys that are already set untouched. */
+function applyDotEnvFile(envPath: string, env: NodeJS.ProcessEnv): void {
   let raw: string;
   try {
     raw = readFileSync(envPath, 'utf-8');
   } catch {
-    return; // unreadable .env is not fatal — real env vars may still suffice
+    return; // unreadable .env is not fatal — other sources may still suffice
   }
 
   for (const line of raw.split(/\r?\n/)) {
@@ -85,14 +109,14 @@ function loadDotEnv(): void {
     if (eq === -1) continue;
 
     const key = trimmed.slice(0, eq).trim();
-    if (!key || key in process.env) continue;
+    if (!key || key in env) continue;
 
     let value = trimmed.slice(eq + 1).trim();
     // Strip matching surrounding quotes, if present.
     if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
       value = value.slice(1, -1);
     }
-    process.env[key] = value;
+    env[key] = value;
   }
 }
 
