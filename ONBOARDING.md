@@ -43,8 +43,8 @@ you — you will not need to activate anything manually.
 ### 3.1 Clone
 
 ```bash
-git clone <repo-url>
-cd sonarqube-mcp-project_1
+git clone https://github.com/Ahmed-Kassem-Q/Sonar-Qube-MCP.git
+cd Sonar-Qube-MCP
 ```
 
 Keep the directory structure as-is. The server is located by a path relative to the
@@ -82,7 +82,7 @@ most common setup failure.
 ### 3.4 Install dependencies
 
 ```bash
-cd sonarqube-mcp-project_1/mcp/sonarqube-mcp
+cd mcp/sonarqube-mcp
 uv sync
 ```
 
@@ -190,4 +190,4 @@ server by hand from its own directory.
 
 The full reference — every configuration variable, all tools and resources, the
 safety model, and how to run the server standalone for debugging — is in
-[`sonarqube-mcp-project_1/mcp/sonarqube-mcp/README.md`](sonarqube-mcp-project_1/mcp/sonarqube-mcp/README.md).
+[`mcp/sonarqube-mcp/README.md`](mcp/sonarqube-mcp/README.md).

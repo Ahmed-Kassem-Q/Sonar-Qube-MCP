@@ -30,15 +30,15 @@ Built with the official [MCP Python SDK](https://github.com/modelcontextprotocol
 ```
 .
 ├── .mcp.json                       # Project-scoped MCP server config (auto-discovered by Claude Code)
+├── ONBOARDING.md                   # Start here if you are new to the team
 ├── .claude/
 │   ├── settings.json                # Approves the project-scoped MCP server
 │   └── skills/
 │       ├── fix-sonarqube-issues/    # Retrieve → fix → confirm → apply → build → test → report
 │       ├── lead-review/             # Architecture / security / performance / tech-debt report
 │       └── pre-pr-review/           # Changed-files review + Sonar compliance + PR feedback
-└── sonarqube-mcp-project_1/
-    └── mcp/
-        └── sonarqube-mcp/            # This package
+└── mcp/
+    └── sonarqube-mcp/                # This package
         ├── pyproject.toml
         ├── .env.example
         ├── src/sonarqube_mcp/
@@ -132,7 +132,7 @@ this repository — no manual `claude mcp add` needed.
       "command": "uv",
       "args": [
         "--directory",
-        "sonarqube-mcp-project_1/mcp/sonarqube-mcp",
+        "mcp/sonarqube-mcp",
         "run",
         "sonarqube-mcp"
       ],
@@ -196,7 +196,7 @@ To use the server outside this repository, register it at user scope:
 claude mcp add sonarqube --scope user \
   -e SONARQUBE_URL="$SONARQUBE_URL" \
   -e SONARQUBE_TOKEN="$SONARQUBE_TOKEN" \
-  -- uv --directory /absolute/path/to/sonarqube-mcp-project_1/mcp/sonarqube-mcp run sonarqube-mcp
+  -- uv --directory /absolute/path/to/Sonar-Qube-MCP/mcp/sonarqube-mcp run sonarqube-mcp
 ```
 
 The `--directory` must be absolute here, since the server is launched from arbitrary

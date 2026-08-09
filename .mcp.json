@@ -4,7 +4,7 @@
       "command": "uv",
       "args": [
         "--directory",
-        "sonarqube-mcp-project_1/mcp/sonarqube-mcp",
+        "mcp/sonarqube-mcp",
         "run",
         "sonarqube-mcp"
       ],
