@@ -29,12 +29,12 @@ Nobody shares a token.
 
 | Tool | Check | If missing |
 |---|---|---|
-| Python 3.12+ | `python --version` | [python.org](https://www.python.org/downloads/) |
-| `uv` | `uv --version` | `winget install astral-sh.uv` (or see [docs](https://docs.astral.sh/uv/)) |
+| Node.js 20.6+ | `node --version` | `winget install OpenJS.NodeJS.LTS` (or [nodejs.org](https://nodejs.org)) |
 | Claude Code | `claude --version` | Install the VS Code extension or CLI |
 
-`uv` is the Python package manager this project uses. It handles the virtualenv for
-you — you will not need to activate anything manually.
+That's the whole list. Node ships with `npm`, and the server has only two runtime
+dependencies, both installed locally into the project — nothing goes on your system
+PATH and nothing conflicts with other projects.
 
 ---
 
@@ -79,14 +79,19 @@ export SONARQUBE_TOKEN="squ_your_token_here"
 started *after* it runs, so an already-open editor will not see it. This is the single
 most common setup failure.
 
-### 3.4 Install dependencies
+### 3.4 Install and build
 
 ```bash
 cd mcp/sonarqube-mcp
-uv sync
+npm ci
+npm run build
 ```
 
-This creates `.venv/` and installs everything from the locked versions in `uv.lock`.
+`npm ci` installs the exact versions locked in `package-lock.json`. `npm run build`
+compiles the TypeScript in `src/` to `dist/`, which is what `.mcp.json` actually
+launches — **skip the build and the server won't start.**
+
+Re-run `npm run build` after pulling changes that touch `src/`.
 
 ### 3.5 Verify
 
@@ -164,8 +169,12 @@ Same cause — the server started without the variable set.
 The token is wrong, expired, revoked, or you lack permission on that project. Generate
 a fresh one and redo step 3.3.
 
-**`uv: command not found`**
-`uv` isn't installed or isn't on PATH. Reinstall it and open a new terminal.
+**`Cannot find module ... dist/server.js`**
+You skipped the build, or pulled changes and didn't rebuild. Run `npm ci && npm run
+build` in `mcp/sonarqube-mcp`.
+
+**`node: command not found`**
+Node isn't installed or isn't on PATH. Reinstall it and open a new terminal.
 
 **You edited `.env` and nothing changed**
 Expected. Under Claude Code, settings come from the `env` block in `.mcp.json`, not

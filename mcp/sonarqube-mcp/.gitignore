@@ -1,12 +1,6 @@
 .env
-__pycache__/
-*.pyc
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-*.egg-info/
+node_modules/
 dist/
-build/
-.venv/
-venv/
+*.tsbuildinfo
+coverage/
 sonar_fix_report_*.md

@@ -1,13 +1,8 @@
 {
   "mcpServers": {
     "sonarqube": {
-      "command": "uv",
-      "args": [
-        "--directory",
-        "mcp/sonarqube-mcp",
-        "run",
-        "sonarqube-mcp"
-      ],
+      "command": "node",
+      "args": ["mcp/sonarqube-mcp/dist/server.js"],
       "env": {
         "SONARQUBE_URL": "${SONARQUBE_URL:-https://gsonar.alqemam.com}",
         "SONARQUBE_TOKEN": "${SONARQUBE_TOKEN}",
