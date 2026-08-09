@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildSettings, clearSettingsCache, getSettings } from '../src/config.js';
@@ -59,6 +61,34 @@ describe('settings validation', () => {
     process.env['SONARQUBE_TOKEN'] = 'abc123';
     process.env['SONARQUBE_ORGANIZATION'] = '';
     expect(buildSettings(process.env).sonarqubeOrganization).toBeUndefined();
+  });
+
+  it('reads values from a .env file', () => {
+    const root = makeRepoRoot();
+    configureEnv(root);
+    delete process.env['MCP_SKIP_DOTENV'];
+    delete process.env['SONARQUBE_URL'];
+    delete process.env['SONARQUBE_TOKEN'];
+    writeFileSync(
+      join(root, '.env'),
+      '# a comment\nSONARQUBE_URL=https://from-dotenv.example\nSONARQUBE_TOKEN="quoted-token"\n\n',
+    );
+    clearSettingsCache();
+
+    const settings = getSettings();
+    expect(settings.sonarqubeUrl).toBe('https://from-dotenv.example');
+    expect(settings.auth).toEqual({ username: 'quoted-token', password: '' });
+  });
+
+  it('lets a real environment variable win over .env', () => {
+    const root = makeRepoRoot();
+    configureEnv(root);
+    delete process.env['MCP_SKIP_DOTENV'];
+    writeFileSync(join(root, '.env'), 'SONARQUBE_URL=https://from-dotenv.example\n');
+    process.env['SONARQUBE_URL'] = 'https://from-env.example';
+    clearSettingsCache();
+
+    expect(getSettings().sonarqubeUrl).toBe('https://from-env.example');
   });
 
   it('memoizes getSettings', () => {

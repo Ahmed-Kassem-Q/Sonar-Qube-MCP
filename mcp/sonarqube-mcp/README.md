@@ -73,13 +73,23 @@ Use `npm install` instead of `npm ci` if you are intentionally updating dependen
 
 ## Configuration
 
-When running **under Claude Code**, configuration comes from the `env` block in
-`.mcp.json`, which expands `${SONARQUBE_TOKEN}` from your own environment — see
-[Per-developer setup](#per-developer-setup-each-teammate-does-this-once).
+Copy `.env.example` to `.env` in this directory and fill in your values:
 
-When running the server **by hand** from `mcp/sonarqube-mcp/`, copy `.env.example`
-to `.env` and fill in your values instead. `.env` is git-ignored — never commit real
-tokens.
+```bash
+cd mcp/sonarqube-mcp
+cp .env.example .env
+```
+
+`.env` is git-ignored — never commit real tokens.
+
+The server looks for `.env` in two places, in order: the **current working directory**
+(the project root, when launched by Claude Code), then **this package's own
+directory**. The second location is why `mcp/sonarqube-mcp/.env` works even though
+Claude Code starts the server from the repo root.
+
+Real environment variables always win over `.env`, so you can override any single
+value from the shell — or supply everything that way in CI, where writing a file is
+awkward.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
@@ -129,65 +139,49 @@ This repository ships a project-scoped `.mcp.json` at the repo root plus a
 this server automatically** the next time you run `claude` inside this repository —
 no manual `claude mcp add` needed.
 
-`.mcp.json`:
+`.mcp.json` — the entire file:
 
 ```json
 {
   "mcpServers": {
     "sonarqube": {
       "command": "node",
-      "args": ["mcp/sonarqube-mcp/dist/server.js"],
-      "env": {
-        "SONARQUBE_URL": "${SONARQUBE_URL:-https://gsonar.alqemam.com}",
-        "SONARQUBE_TOKEN": "${SONARQUBE_TOKEN}",
-        "SONARQUBE_VERIFY_SSL": "${SONARQUBE_VERIFY_SSL:-true}",
-        "MCP_LOG_LEVEL": "${MCP_LOG_LEVEL:-INFO}"
-      }
+      "args": ["mcp/sonarqube-mcp/dist/server.js"]
     }
   }
 }
 ```
 
+There is **no `env` block, and deliberately so**. Everything configurable lives in each
+developer's own `.env`, which keeps three things out of a file that is committed and
+shared: tokens, your SonarQube hostname (internal infrastructure worth not publishing),
+and any per-machine paths. It also means the file never needs editing — no merge
+conflicts on it, ever.
+
 The server path is **relative to the project root**, which is the working directory
 Claude Code launches stdio servers from — so it resolves on every machine with no
 per-developer editing. It points at `dist/`, so `npm run build` must have been run.
 
-`MCP_REPO_ROOT` is deliberately **not** set. It defaults to `.` (see `config.ts`),
-which is that same project root, so the repository tools sandbox themselves to
-whichever checkout Claude was started in. Hardcoding an absolute path here would
-point `read_file`/`write_file` at one developer's copy of the repo.
+`MCP_REPO_ROOT` is deliberately unset. It defaults to `.` (see `config.ts`), which is
+that same project root, so the repository tools sandbox themselves to whichever
+checkout Claude was started in. Hardcoding an absolute path would point
+`read_file`/`write_file` at one developer's copy of the repo.
 
 ### Per-developer setup (each teammate does this once)
 
-The committed `.mcp.json` contains **no secrets** — `${SONARQUBE_TOKEN}` is expanded
-from your own environment, so every developer authenticates as themselves and Sonar
-attributes activity to the right user.
+Every developer authenticates with their own token, so Sonar attributes activity to the
+right user and nobody shares credentials.
 
 1. Generate a personal token at **My Account → Security → Generate Token** on your
    SonarQube server.
-2. Export it, so it is set before `claude` starts:
-
-   ```powershell
-   setx SONARQUBE_TOKEN "squ_<your-own-token>"      # Windows, persistent
-   ```
-
-   ```bash
-   export SONARQUBE_TOKEN="squ_<your-own-token>"    # macOS/Linux — add to your shell profile
-   ```
-3. Restart your terminal (or VS Code) so the new variable is inherited.
-4. `npm ci && npm run build` inside `mcp/sonarqube-mcp`.
-5. Open the project — `.claude/settings.json` already sets
+2. `cd mcp/sonarqube-mcp && cp .env.example .env`, then set `SONARQUBE_URL` and
+   `SONARQUBE_TOKEN` in it. Every other variable has a working default.
+3. `npm ci && npm run build`.
+4. Open the project — `.claude/settings.json` already sets
    `enableAllProjectMcpServers`, so the server connects with no approval prompt.
 
-Every other variable in the table above has a default, so the token is the only one
-you must set. If you forget it, the server refuses to start and the error names the
-missing variable.
-
-> **Note:** because the `env` block above supplies the settings, the `.env` file inside
-> `mcp/sonarqube-mcp/` is **not** read when the server runs under Claude Code —
-> `config.ts` loads `.env` relative to the process working directory, which is the
-> project root, not the package directory. `.env` only applies when you run
-> `npm start` by hand from inside `mcp/sonarqube-mcp`.
+If the token is missing, the server refuses to start and the error names the missing
+variable rather than failing later with a confusing auth error.
 
 ### Making it available in every project
 

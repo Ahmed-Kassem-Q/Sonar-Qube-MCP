@@ -52,7 +52,8 @@ repo root, so moving folders around will break it.
 
 ### 3.2 Get your own SonarQube token
 
-1. Open <https://gsonar.alqemam.com> and sign in.
+1. Open your team's SonarQube server in a browser and sign in. (Ask a teammate for the
+   URL — it isn't committed to this repository, which is public.)
 2. Click your avatar → **My Account** → **Security**.
 3. Under **Generate Tokens**, name it something like `claude-code-<yourname>`, choose
    type **User Token**, and click **Generate**.
@@ -61,23 +62,32 @@ repo root, so moving folders around will break it.
 
 It looks like `squ_` followed by a long hex string.
 
-### 3.3 Put the token in your environment
+### 3.3 Create your `.env`
 
-The token lives in *your* environment, never in the repo. On Windows:
-
-```powershell
-setx SONARQUBE_TOKEN "squ_your_token_here"
-```
-
-macOS/Linux — add this to `~/.zshrc` or `~/.bashrc`:
+Copy the template and fill in your own values:
 
 ```bash
-export SONARQUBE_TOKEN="squ_your_token_here"
+cd mcp/sonarqube-mcp
+cp .env.example .env
 ```
 
-**Then fully restart VS Code** (or your terminal). `setx` only affects processes
-started *after* it runs, so an already-open editor will not see it. This is the single
-most common setup failure.
+Then edit `.env` and set two things:
+
+```ini
+SONARQUBE_URL=https://your-sonarqube-host      # ask a teammate for the internal URL
+SONARQUBE_TOKEN=squ_your_token_here            # the one you just generated
+```
+
+Everything else in the file has a working default — leave it alone unless you have a
+reason not to.
+
+`.env` is git-ignored, so your token stays on your machine and can never be committed.
+**Never put your token in `.mcp.json`** — that file is shared with the whole team.
+
+> If you prefer, you can instead export `SONARQUBE_URL` and `SONARQUBE_TOKEN` as real
+> environment variables; those take precedence over `.env`. Useful for CI, where
+> writing a file is awkward. If you go that route on Windows, `setx` only affects
+> processes started *afterwards*, so fully restart VS Code.
 
 ### 3.4 Install and build
 
@@ -157,17 +167,19 @@ elsewhere on your disk through these tools.
 ## 5. When something breaks
 
 **`/mcp` doesn't list `sonarqube`, or shows it as failed**
-Almost always the token variable isn't visible to the editor. In a *fresh* terminal:
-`echo $env:SONARQUBE_TOKEN` (PowerShell) or `echo $SONARQUBE_TOKEN`. If it's empty,
-redo step 3.3 and restart VS Code completely. If it prints correctly, run
-`claude mcp get sonarqube` for the connection error.
+Check that `mcp/sonarqube-mcp/.env` exists and has both `SONARQUBE_URL` and
+`SONARQUBE_TOKEN` filled in — a copied `.env.example` still holds the placeholder
+`squ_xxxx...`, which is not a real token. Then run `claude mcp get sonarqube` to see
+the actual startup error.
 
 **"No SonarQube credentials configured"**
-Same cause — the server started without the variable set.
+The server started without a token. Either `.env` is missing, sits in the wrong
+directory (it belongs in `mcp/sonarqube-mcp/`, next to `.env.example`), or the token
+line is still the placeholder.
 
 **Every tool returns 401 or 403**
 The token is wrong, expired, revoked, or you lack permission on that project. Generate
-a fresh one and redo step 3.3.
+a fresh one and update `.env`.
 
 **`Cannot find module ... dist/server.js`**
 You skipped the build, or pulled changes and didn't rebuild. Run `npm ci && npm run
@@ -177,9 +189,9 @@ build` in `mcp/sonarqube-mcp`.
 Node isn't installed or isn't on PATH. Reinstall it and open a new terminal.
 
 **You edited `.env` and nothing changed**
-Expected. Under Claude Code, settings come from the `env` block in `.mcp.json`, not
-from `.env` — see the note in the server README. `.env` only applies when you run the
-server by hand from its own directory.
+The server reads `.env` once at startup, so restart Claude Code (or `/mcp` reconnect)
+to pick up an edit. Also check you don't have a stale `SONARQUBE_*` variable exported
+in your shell — real environment variables take precedence over `.env`.
 
 ---
 
@@ -188,8 +200,9 @@ server by hand from its own directory.
 - **Never commit a token.** `.env` is git-ignored; keep it that way. If a token ever
   reaches a commit, revoke it in SonarQube immediately — deleting the line is not
   enough, git history keeps it.
-- **Don't add your token to `.mcp.json`.** It's shared with the whole team. It only
-  ever holds `${SONARQUBE_TOKEN}` placeholders.
+- **Don't add your token — or your server's hostname — to `.mcp.json`.** It's shared
+  with the whole team and the repository is public. `.mcp.json` holds only the command
+  needed to launch the server; all configuration belongs in your own `.env`.
 - **Review every diff before approving.** Claude is good at Sonar fixes and still
   occasionally wrong about intent. You own the commit.
 

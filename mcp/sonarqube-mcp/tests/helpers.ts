@@ -29,6 +29,7 @@ const MANAGED_ENV_KEYS = [
   'MCP_MAX_READ_FILE_BYTES',
   'MCP_MAX_WRITE_FILE_BYTES',
   'MCP_LOG_LEVEL',
+  'MCP_SKIP_DOTENV',
 ] as const;
 
 const createdDirs: string[] = [];
@@ -67,6 +68,8 @@ export function makeRepoRoot(): string {
  */
 export function configureEnv(repoRoot: string): void {
   clearManagedEnv();
+  // Never let a developer's real .env leak into the suite.
+  process.env['MCP_SKIP_DOTENV'] = '1';
   process.env['SONARQUBE_URL'] = 'https://sonarcloud.io';
   process.env['SONARQUBE_TOKEN'] = 'test-token';
   process.env['MCP_REPO_ROOT'] = repoRoot;

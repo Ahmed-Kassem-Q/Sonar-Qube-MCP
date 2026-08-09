@@ -13,23 +13,46 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 import { ConfigurationError } from './errors.js';
 import { LOG_LEVELS, type LogLevel } from './logging.js';
 
 /**
- * Seed `process.env` from a `.env` file, without clobbering variables that are
- * already set.
+ * Directories searched for a `.env` file, in order.
  *
- * Real environment variables deliberately win over `.env` entries — the same
- * precedence pydantic-settings applied, and what makes `.mcp.json`'s `env`
- * block authoritative when the server runs under Claude Code.
+ * The package's own directory is included so that `mcp/sonarqube-mcp/.env`
+ * works when Claude Code launches the server from the project root. Without
+ * it, `.env` would only ever apply when running the server by hand from inside
+ * the package — a trap that reliably confuses new developers, since the file
+ * sits right next to `.env.example` and looks like it should work.
+ *
+ * The current working directory is searched first so a project-level `.env` can
+ * override the package default.
  */
-function loadDotEnv(cwd: string = process.cwd()): void {
-  const envPath = resolve(cwd, '.env');
-  if (!existsSync(envPath)) return;
+function dotEnvSearchPaths(): string[] {
+  // dist/config.js -> dist -> package root
+  const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+  return [resolve(process.cwd(), '.env'), resolve(packageRoot, '.env')];
+}
+
+/**
+ * Seed `process.env` from the first `.env` file found, without clobbering
+ * variables that are already set.
+ *
+ * Real environment variables deliberately win over `.env` entries, so a value
+ * in `.mcp.json`'s `env` block or exported in the shell always takes
+ * precedence over the file.
+ */
+function loadDotEnv(): void {
+  // Tests set this so a developer's real .env cannot leak live credentials
+  // into cases that deliberately unset them.
+  if (process.env['MCP_SKIP_DOTENV'] === '1') return;
+
+  const envPath = dotEnvSearchPaths().find((candidate) => existsSync(candidate));
+  if (envPath === undefined) return;
 
   let raw: string;
   try {
