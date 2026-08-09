@@ -13,7 +13,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
@@ -21,21 +21,38 @@ import { ConfigurationError } from './errors.js';
 import { LOG_LEVELS, type LogLevel } from './logging.js';
 
 /**
- * Directories searched for a `.env` file, in order.
+ * Locations searched for a `.env` file, most specific first. The first file
+ * that exists wins.
  *
- * The package's own directory is included so that `mcp/sonarqube-mcp/.env`
- * works when Claude Code launches the server from the project root. Without
- * it, `.env` would only ever apply when running the server by hand from inside
- * the package — a trap that reliably confuses new developers, since the file
- * sits right next to `.env.example` and looks like it should work.
- *
- * The current working directory is searched first so a project-level `.env` can
- * override the package default.
+ * 1. **Working directory** — the project root when Claude Code launches the
+ *    server, so a single project can override the global config.
+ * 2. **The package's own directory** — makes `mcp/sonarqube-mcp/.env` work when
+ *    running from a clone of this repository. Without it, `.env` would only
+ *    apply when running the server by hand from inside the package, a trap that
+ *    reads as broken since the file sits right next to `.env.example`.
+ * 3. **`~/.config/sonarqube-mcp/.env`** — the global location, used when the
+ *    server is installed as a plugin or globally, where neither of the first
+ *    two paths points anywhere a user would think to edit.
  */
-function dotEnvSearchPaths(): string[] {
+export function dotEnvSearchPaths(): string[] {
   // dist/config.js -> dist -> package root
   const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-  return [resolve(process.cwd(), '.env'), resolve(packageRoot, '.env')];
+  return [
+    resolve(process.cwd(), '.env'),
+    resolve(packageRoot, '.env'),
+    globalEnvPath(),
+  ];
+}
+
+/**
+ * Path to the user-level config file, honouring `XDG_CONFIG_HOME` where set.
+ *
+ * Exported so the setup script writes to exactly the path the server reads.
+ */
+export function globalEnvPath(): string {
+  const xdg = process.env['XDG_CONFIG_HOME'];
+  const configHome = xdg && xdg.trim() !== '' ? xdg : join(homedir(), '.config');
+  return resolve(configHome, 'sonarqube-mcp', '.env');
 }
 
 /**

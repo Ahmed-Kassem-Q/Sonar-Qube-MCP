@@ -25,7 +25,41 @@ Nobody shares a token.
 
 ---
 
-## 2. Prerequisites
+## 1a. The fast path — install the plugin
+
+If you just want to *use* this in your own projects, you do **not** need to clone
+anything, install dependencies, or build. Inside any Claude Code session:
+
+```
+/plugin marketplace add Ahmed-Kassem-Q/Sonar-Qube-MCP
+/plugin install sonarqube@alqemam-sonarqube
+```
+
+That gives you the SonarQube tools **and** all three skills in *every* project, not
+just this one. Then set your credentials once, globally, by creating
+`~/.config/sonarqube-mcp/.env` with two lines:
+
+```ini
+SONARQUBE_URL=https://your-sonarqube-host
+SONARQUBE_TOKEN=squ_your_token_here
+```
+
+```powershell
+# Windows one-liner, if you prefer
+mkdir "$env:USERPROFILE\.config\sonarqube-mcp" -Force
+"SONARQUBE_URL=https://your-sonarqube-host`nSONARQUBE_TOKEN=squ_your_token_here" |
+  Set-Content "$env:USERPROFILE\.config\sonarqube-mcp\.env" -Encoding utf8
+```
+
+Generate the token in SonarQube under **My Account → Security → Generate Tokens**
+(type *User Token*), and ask a teammate for the server URL.
+
+Restart Claude Code and run `/mcp` — you should see `sonarqube` connected. **You're
+done; the rest of this guide is for people who want to work on the server itself.**
+
+---
+
+## 2. Prerequisites (for contributors)
 
 | Tool | Check | If missing |
 |---|---|---|

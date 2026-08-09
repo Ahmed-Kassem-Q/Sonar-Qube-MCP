@@ -1,0 +1,9 @@
+{
+  "name": "sonarqube",
+  "description": "Connects Claude Code to SonarQube or SonarCloud. Triage issues, check quality gates, inspect metrics, and drive a confirm-before-write fix workflow against your codebase. Bundles the fix-sonarqube-issues, lead-review, and pre-pr-review skills.",
+  "author": {
+    "name": "Alqemam Engineering"
+  },
+  "homepage": "https://github.com/Ahmed-Kassem-Q/Sonar-Qube-MCP",
+  "version": "0.1.0"
+}

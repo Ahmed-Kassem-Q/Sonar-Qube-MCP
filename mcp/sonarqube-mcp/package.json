@@ -26,7 +26,8 @@
   ],
   "scripts": {
     "setup": "node scripts/setup.mjs",
-    "build": "tsc",
+    "build": "tsc && npm run bundle",
+    "bundle": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=esm --outfile=../../plugin/server/sonarqube-mcp.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
     "start": "node dist/server.js",
     "dev": "tsc --watch",
     "test": "vitest run",
@@ -40,6 +41,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.0",
     "vitest": "^4.1.0"
   }

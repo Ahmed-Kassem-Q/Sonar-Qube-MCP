@@ -21,13 +21,23 @@
  * credentials anywhere else.
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const TEMPLATE_PATH = join(PACKAGE_ROOT, '.env.example');
-const ENV_PATH = join(PACKAGE_ROOT, '.env');
+
+/**
+ * User-level config path. Must stay in sync with `globalEnvPath()` in
+ * `src/config.ts` — this script writes exactly where the server reads.
+ */
+function globalEnvPath() {
+  const xdg = process.env['XDG_CONFIG_HOME'];
+  const configHome = xdg && xdg.trim() !== '' ? xdg : join(homedir(), '.config');
+  return resolve(configHome, 'sonarqube-mcp', '.env');
+}
 
 /** Variables the user must supply; blanked unless passed on the command line. */
 const REQUIRED_KEYS = ['SONARQUBE_URL', 'SONARQUBE_TOKEN'];
@@ -63,10 +73,12 @@ const args = parseArgs(process.argv.slice(2));
 
 if (args['help'] === 'true') {
   process.stdout.write(
-    'Usage: npm run setup [-- --url=<sonarqube-url>] [--token=<token>] [--force]\n\n' +
-      '  --url    SONARQUBE_URL to write into .env\n' +
-      '  --token  SONARQUBE_TOKEN to write into .env\n' +
-      '  --force  overwrite an existing .env (it is backed up to .env.bak first)\n',
+    'Usage: npm run setup [-- --url=<sonarqube-url>] [--token=<token>] [--global] [--force]\n\n' +
+      '  --url     SONARQUBE_URL to write into .env\n' +
+      '  --token   SONARQUBE_TOKEN to write into .env\n' +
+      '  --global  write to ~/.config/sonarqube-mcp/.env instead of this package,\n' +
+      '            so the config applies in every project (use this with the plugin)\n' +
+      '  --force   overwrite an existing .env (it is backed up to .env.bak first)\n',
   );
   process.exit(0);
 }
@@ -76,11 +88,14 @@ if (!existsSync(TEMPLATE_PATH)) {
 }
 
 const force = args['force'] === 'true';
+const isGlobal = args['global'] === 'true';
+const ENV_PATH = isGlobal ? globalEnvPath() : join(PACKAGE_ROOT, '.env');
 
 if (existsSync(ENV_PATH) && !force) {
   // Never clobber a working config — the token in it may be unrecoverable.
+  const shown = isGlobal ? ENV_PATH : relative(process.cwd(), ENV_PATH);
   process.stdout.write(
-    `setup: ${relative(process.cwd(), ENV_PATH)} already exists — leaving it untouched.\n` +
+    `setup: ${shown} already exists — leaving it untouched.\n` +
       '       Re-run with --force to replace it (the current file is backed up first).\n',
   );
   process.exit(0);
@@ -113,9 +128,12 @@ if (existsSync(ENV_PATH)) {
   process.stdout.write('setup: existing .env backed up to .env.bak\n');
 }
 
+mkdirSync(dirname(ENV_PATH), { recursive: true });
 writeFileSync(ENV_PATH, output.join('\n'), 'utf-8');
 
-const shortPath = relative(process.cwd(), ENV_PATH) || '.env';
+// An absolute path is clearer for the global location, which lives outside the
+// repository and would otherwise render as a pile of "../"s.
+const shortPath = isGlobal ? ENV_PATH : relative(process.cwd(), ENV_PATH) || '.env';
 process.stdout.write(`setup: created ${shortPath}\n`);
 
 const missing = REQUIRED_KEYS.filter((key) => !written.includes(key));
