@@ -64,25 +64,28 @@ It looks like `squ_` followed by a long hex string.
 
 ### 3.3 Create your `.env`
 
-Copy the template and fill in your own values:
+Fastest route — pass your credentials straight in, and nothing needs editing:
 
 ```bash
 cd mcp/sonarqube-mcp
-cp .env.example .env
+npm run setup -- --url=https://your-sonarqube-host --token=squ_your_token_here
 ```
 
-Then edit `.env` and set two things:
+Or run it bare and fill in the two blanks it leaves you:
 
-```ini
-SONARQUBE_URL=https://your-sonarqube-host      # ask a teammate for the internal URL
-SONARQUBE_TOKEN=squ_your_token_here            # the one you just generated
+```bash
+npm run setup
 ```
 
-Everything else in the file has a working default — leave it alone unless you have a
-reason not to.
+Everything else in the generated file has a working default — leave it alone unless
+you have a reason not to. If a `.env` already exists, `setup` refuses to touch it, so
+you can't lose a working token by re-running it.
 
 `.env` is git-ignored, so your token stays on your machine and can never be committed.
 **Never put your token in `.mcp.json`** — that file is shared with the whole team.
+
+> On a shared terminal, prefer `npm run setup` without `--token`: flag values land in
+> your shell history.
 
 > If you prefer, you can instead export `SONARQUBE_URL` and `SONARQUBE_TOKEN` as real
 > environment variables; those take precedence over `.env`. Useful for CI, where

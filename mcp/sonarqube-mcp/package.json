@@ -25,6 +25,7 @@
     "README.md"
   ],
   "scripts": {
+    "setup": "node scripts/setup.mjs",
     "build": "tsc",
     "start": "node dist/server.js",
     "dev": "tsc --watch",

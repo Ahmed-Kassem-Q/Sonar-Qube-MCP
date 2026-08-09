@@ -43,6 +43,7 @@ Written in TypeScript on the official
         ├── package.json
         ├── tsconfig.json
         ├── .env.example
+        ├── scripts/setup.mjs         # `npm run setup` — generates .env from the template
         ├── src/
         │   ├── server.ts            # Entry point, McpServer instance, stdio transport
         │   ├── config.ts            # zod-validated configuration, memoized
@@ -73,12 +74,22 @@ Use `npm install` instead of `npm ci` if you are intentionally updating dependen
 
 ## Configuration
 
-Copy `.env.example` to `.env` in this directory and fill in your values:
+Generate `.env` from the template with `npm run setup`, optionally passing credentials
+so nothing needs hand-editing:
 
 ```bash
 cd mcp/sonarqube-mcp
-cp .env.example .env
+npm run setup                                                    # blanks to fill in
+npm run setup -- --url=https://sonar.example.com --token=squ_xxx # ready to use
 ```
+
+It refuses to overwrite an existing `.env` (pass `--force` to replace it, which backs
+the current file up to `.env.bak` first). Credentials you don't pass are written
+**blank** rather than as placeholders, so a half-configured server fails immediately
+naming the missing variable instead of later with a confusing HTTP 401.
+
+This is deliberately not a `postinstall` hook — writing files into your working tree
+as a side effect of `npm ci` is surprising. `cp .env.example .env` by hand works too.
 
 `.env` is git-ignored — never commit real tokens.
 
@@ -174,8 +185,8 @@ right user and nobody shares credentials.
 
 1. Generate a personal token at **My Account → Security → Generate Token** on your
    SonarQube server.
-2. `cd mcp/sonarqube-mcp && cp .env.example .env`, then set `SONARQUBE_URL` and
-   `SONARQUBE_TOKEN` in it. Every other variable has a working default.
+2. `cd mcp/sonarqube-mcp && npm run setup -- --url=<your-server> --token=<your-token>`.
+   Every other variable has a working default.
 3. `npm ci && npm run build`.
 4. Open the project — `.claude/settings.json` already sets
    `enableAllProjectMcpServers`, so the server connects with no approval prompt.
