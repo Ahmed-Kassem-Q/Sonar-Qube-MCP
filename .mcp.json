@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "sonarqube": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "sonarqube-mcp-project_1/mcp/sonarqube-mcp",
+        "run",
+        "sonarqube-mcp"
+      ],
+      "env": {
+        "SONARQUBE_URL": "${SONARQUBE_URL:-https://gsonar.alqemam.com}",
+        "SONARQUBE_TOKEN": "${SONARQUBE_TOKEN}",
+        "SONARQUBE_VERIFY_SSL": "${SONARQUBE_VERIFY_SSL:-true}",
+        "MCP_LOG_LEVEL": "${MCP_LOG_LEVEL:-INFO}"
+      }
+    }
+  }
+}

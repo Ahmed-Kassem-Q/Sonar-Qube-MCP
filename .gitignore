@@ -1,0 +1,37 @@
+# --- Secrets -----------------------------------------------------------------
+# Never commit real tokens. Templates (.env.example) are committed; .env is not.
+.env
+.env.local
+.env.*.local
+
+# --- Claude Code --------------------------------------------------------------
+# settings.json and skills/ ARE committed (shared team config).
+# These hold per-developer state and must not be.
+.claude/settings.local.json
+.claude/projects/
+.claude/todos/
+.claude/shell-snapshots/
+.claude/statsig/
+
+# --- Python -------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Generated reports ---------------------------------------------------------
+sonar_fix_report_*.md
+
+# --- Editors / OS ---------------------------------------------------------------
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
