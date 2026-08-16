@@ -5,7 +5,8 @@
  *
  * 1. **SonarQube tools** (`get_projects`, `get_project_issues`,
  *    `get_critical_issues`, `get_quality_gate`, `get_issue_details`,
- *    `get_project_metrics`) — thin, validating wrappers around
+ *    `get_project_metrics`, `get_duplicated_files`, `get_file_duplications`)
+ *    — thin, validating wrappers around
  *    {@link SonarQubeClient}.
  * 2. **Repository access tools** (`read_file`, `write_file`, `list_files`,
  *    `search_code`, `search_files`) — thin wrappers around `repoAccess.ts`,
@@ -25,7 +26,10 @@ import type { SonarQubeClient } from './client.js';
 import { RepositoryAccessError } from './errors.js';
 import {
   codeSearchMatchSchema,
+  componentMeasuresSchema,
+  DEFAULT_DUPLICATION_METRIC_KEYS,
   DEFAULT_METRIC_KEYS,
+  fileDuplicationsSchema,
   issueSchema,
   issueStatusSchema,
   issueTypeSchema,
@@ -217,6 +221,92 @@ export function registerTools(server: McpServer, getClient: () => SonarQubeClien
     },
     async ({ project_key, metric_keys }) =>
       result(await getClient().getMeasures(project_key, metric_keys ?? DEFAULT_METRIC_KEYS)),
+  );
+
+  server.registerTool(
+    'get_duplicated_files',
+    {
+      title: 'Rank files by duplicated lines',
+      description:
+        'List the files in a project ranked by duplicated lines, highest first. Use this ' +
+        'to find where duplication actually lives before planning a refactor, instead of ' +
+        'guessing from code that merely looks similar. Follow up with get_file_duplications ' +
+        'on the top entries to confirm the exact duplicated blocks.',
+      inputSchema: {
+        project_key: z.string().describe('The SonarQube project key.'),
+        metric_keys: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Optional explicit list of metric keys to report per file. Defaults to the ' +
+              'duplication set (duplicated_lines, duplicated_blocks, ' +
+              'duplicated_lines_density) plus ncloc.',
+          ),
+        sort_metric: z
+          .string()
+          .default('duplicated_lines')
+          .describe(
+            'Metric to rank by, descending. Must also appear in metric_keys. Defaults to ' +
+              'duplicated_lines — the metric a duplication-reduction pass is measured in.',
+          ),
+        only_with_measures: z
+          .boolean()
+          .default(true)
+          .describe(
+            'Whether to omit files that have no value for sort_metric. Defaults to true, ' +
+              'so clean files do not pad the result.',
+          ),
+        max_results: z
+          .number()
+          .int()
+          .positive()
+          .default(100)
+          .describe('Upper bound on the number of files returned. Defaults to 100.'),
+      },
+      outputSchema: { components: z.array(componentMeasuresSchema) },
+    },
+    async ({ project_key, metric_keys, sort_metric, only_with_measures, max_results }) => {
+      const metricKeys = metric_keys ?? DEFAULT_DUPLICATION_METRIC_KEYS;
+      if (!metricKeys.includes(sort_metric)) {
+        throw new Error(
+          `sort_metric '${sort_metric}' must also appear in metric_keys ` +
+            `(got: ${metricKeys.join(', ')}). SonarQube can only rank by a metric it was asked to return.`,
+        );
+      }
+
+      const components = await getClient().getComponentTree(project_key, {
+        metricKeys,
+        sortMetric: sort_metric,
+        withMeasuresOnly: only_with_measures,
+        maxResults: max_results,
+      });
+      return result({ components });
+    },
+  );
+
+  server.registerTool(
+    'get_file_duplications',
+    {
+      title: 'Get duplicated blocks for a file',
+      description:
+        'Show the exact duplicated line ranges SonarQube found for a single file, and the ' +
+        'other files each range matches. This is the ground truth for a duplication ' +
+        'refactor: use it to confirm a match is genuine copy-paste logic before changing ' +
+        'anything, and to rule out false targets such as static seed data, generated code, ' +
+        'or config literals, which are structurally repetitive but should not be abstracted.',
+      inputSchema: {
+        component_key: z
+          .string()
+          .describe(
+            'The fully-qualified SonarQube component key of the file — the project key, a ' +
+              'colon, then the repo-relative path (e.g. my-org_my-repo:src/Services/Report.cs). ' +
+              'This is the `component` field on an issue, or the `key` field returned by ' +
+              'get_duplicated_files.',
+          ),
+      },
+      outputSchema: fileDuplicationsSchema.shape,
+    },
+    async ({ component_key }) => result(await getClient().getDuplications(component_key)),
   );
 
   // -------------------------------------------------------------------------

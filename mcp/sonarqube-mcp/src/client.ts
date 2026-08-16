@@ -25,10 +25,16 @@ import {
 import type { Settings } from './config.js';
 import { getLogger } from './logging.js';
 import {
+  componentTreePageSchema,
+  fileDuplicationsSchema,
   issuesPageSchema,
   projectMetricsSchema,
   projectsPageSchema,
   qualityGateResultSchema,
+  rawDuplicationsResponseSchema,
+  type ComponentMeasures,
+  type ComponentTreePage,
+  type FileDuplications,
   type Issue,
   type IssuesPage,
   type Project,
@@ -348,5 +354,115 @@ export class SonarQubeClient {
       );
     }
     return projectMetricsSchema.parse(component);
+  }
+
+  /** Call `GET /api/measures/component_tree` for a single page of components. */
+  async searchComponentTree(
+    projectKey: string,
+    options: {
+      metricKeys: readonly string[];
+      sortMetric?: string | undefined;
+      qualifiers?: string | undefined;
+      withMeasuresOnly?: boolean | undefined;
+      page?: number;
+      pageSize?: number;
+    },
+  ): Promise<ComponentTreePage> {
+    const sortMetric = options.sortMetric;
+    const params = this.#withOrg({
+      component: projectKey,
+      metricKeys: options.metricKeys.join(','),
+      qualifiers: options.qualifiers ?? 'FIL',
+      // `s=metric` is only a valid sort field when `metricSort` names a metric
+      // that is also in `metricKeys`, so both are set together or not at all.
+      s: sortMetric ? 'metric' : null,
+      metricSort: sortMetric ?? null,
+      metricSortFilter: sortMetric && options.withMeasuresOnly ? 'withMeasuresOnly' : null,
+      asc: sortMetric ? 'false' : null,
+      p: options.page ?? 1,
+      ps: options.pageSize ?? this.#settings.defaultPageSize,
+    });
+    const data = await this.#request('GET', '/api/measures/component_tree', params);
+    return componentTreePageSchema.parse(data);
+  }
+
+  /**
+   * Page through `api/measures/component_tree`, returning components ranked by
+   * `sortMetric` descending.
+   *
+   * Note that SonarQube caps `component_tree` paging at 10,000 components; a
+   * project larger than that is truncated server-side regardless of
+   * `maxResults`. In practice the ranking makes that harmless — the files that
+   * matter are at the top.
+   */
+  async getComponentTree(
+    projectKey: string,
+    options: {
+      metricKeys: readonly string[];
+      sortMetric?: string | undefined;
+      qualifiers?: string | undefined;
+      withMeasuresOnly?: boolean | undefined;
+      maxResults?: number | undefined;
+    },
+  ): Promise<ComponentMeasures[]> {
+    const maxResults = options.maxResults ?? Number.POSITIVE_INFINITY;
+    const components: ComponentMeasures[] = [];
+
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      const result = await this.searchComponentTree(projectKey, { ...options, page });
+      components.push(...result.components);
+
+      const fetched = result.paging.pageIndex * result.paging.pageSize;
+      if (
+        result.components.length === 0 ||
+        components.length >= maxResults ||
+        fetched >= result.paging.total
+      ) {
+        break;
+      }
+    }
+
+    return Number.isFinite(maxResults) ? components.slice(0, maxResults) : components;
+  }
+
+  // -- duplications ---------------------------------------------------------------
+
+  /**
+   * Call `GET /api/duplications/show` for one file and resolve the response's
+   * `_ref` indirection.
+   *
+   * The raw payload keeps blocks and file identities in separate structures:
+   * each block carries a `_ref` key into a top-level `files` map. Resolving that
+   * join here means callers get self-describing blocks (`componentKey` + line
+   * range) instead of having to correlate two collections themselves.
+   *
+   * Deliberately not wrapped in `#withOrg`: this endpoint takes only `key`, and
+   * the component key is already project-qualified, so an extra `organization`
+   * parameter is at best ignored and at worst rejected by self-hosted servers.
+   */
+  async getDuplications(componentKey: string): Promise<FileDuplications> {
+    const data = await this.#request('GET', '/api/duplications/show', { key: componentKey });
+    const raw = rawDuplicationsResponseSchema.parse(data);
+
+    const duplications = raw.duplications.map((group) => ({
+      blocks: group.blocks.map((block) => {
+        // A block with no `_ref` (or an unresolvable one) refers to the file the
+        // caller asked about; SonarQube omits the self-reference in some versions.
+        const file = block._ref === null || block._ref === undefined ? undefined : raw.files[block._ref];
+        return {
+          componentKey: file?.key ?? componentKey,
+          path: file?.name ?? null,
+          projectName: file?.projectName ?? null,
+          from: block.from,
+          size: block.size,
+        };
+      }),
+    }));
+
+    return fileDuplicationsSchema.parse({
+      componentKey,
+      duplicationCount: duplications.length,
+      duplications,
+    });
   }
 }

@@ -31422,13 +31422,71 @@ var DEFAULT_METRIC_KEYS = [
   "code_smells",
   "security_hotspots",
   "coverage",
+  "duplicated_lines",
   "duplicated_lines_density",
+  "duplicated_blocks",
+  "duplicated_files",
   "ncloc",
   "reliability_rating",
   "security_rating",
   "sqale_rating",
   "alert_status"
 ];
+var DEFAULT_DUPLICATION_METRIC_KEYS = [
+  "duplicated_lines",
+  "duplicated_blocks",
+  "duplicated_lines_density",
+  "ncloc"
+];
+var componentMeasuresSchema = external_exports.object({
+  key: external_exports.string(),
+  name: external_exports.string().nullish(),
+  path: external_exports.string().nullish(),
+  qualifier: external_exports.string().nullish(),
+  language: external_exports.string().nullish(),
+  measures: external_exports.array(measureSchema).default([])
+});
+var componentTreePageSchema = external_exports.object({
+  paging: pagingSchema,
+  baseComponent: componentMeasuresSchema.nullish(),
+  components: external_exports.array(componentMeasuresSchema).default([])
+});
+var duplicationBlockSchema = external_exports.object({
+  componentKey: external_exports.string(),
+  path: external_exports.string().nullish(),
+  projectName: external_exports.string().nullish(),
+  from: external_exports.number().int(),
+  size: external_exports.number().int()
+});
+var duplicationGroupSchema = external_exports.object({
+  blocks: external_exports.array(duplicationBlockSchema).default([])
+});
+var fileDuplicationsSchema = external_exports.object({
+  componentKey: external_exports.string(),
+  duplicationCount: external_exports.number().int(),
+  duplications: external_exports.array(duplicationGroupSchema).default([])
+});
+var rawDuplicationsResponseSchema = external_exports.object({
+  duplications: external_exports.array(
+    external_exports.object({
+      blocks: external_exports.array(
+        external_exports.object({
+          from: external_exports.number().int(),
+          size: external_exports.number().int(),
+          _ref: external_exports.string().nullish()
+        })
+      ).default([])
+    })
+  ).default([]),
+  files: external_exports.record(
+    external_exports.string(),
+    external_exports.object({
+      key: external_exports.string(),
+      name: external_exports.string().nullish(),
+      projectName: external_exports.string().nullish()
+    })
+  ).default({})
+});
 var writeResultSchema = external_exports.object({
   path: external_exports.string(),
   bytesWritten: external_exports.number().int(),
@@ -31677,6 +31735,82 @@ var SonarQubeClient = class {
     }
     return projectMetricsSchema.parse(component);
   }
+  /** Call `GET /api/measures/component_tree` for a single page of components. */
+  async searchComponentTree(projectKey, options) {
+    const sortMetric = options.sortMetric;
+    const params = this.#withOrg({
+      component: projectKey,
+      metricKeys: options.metricKeys.join(","),
+      qualifiers: options.qualifiers ?? "FIL",
+      // `s=metric` is only a valid sort field when `metricSort` names a metric
+      // that is also in `metricKeys`, so both are set together or not at all.
+      s: sortMetric ? "metric" : null,
+      metricSort: sortMetric ?? null,
+      metricSortFilter: sortMetric && options.withMeasuresOnly ? "withMeasuresOnly" : null,
+      asc: sortMetric ? "false" : null,
+      p: options.page ?? 1,
+      ps: options.pageSize ?? this.#settings.defaultPageSize
+    });
+    const data = await this.#request("GET", "/api/measures/component_tree", params);
+    return componentTreePageSchema.parse(data);
+  }
+  /**
+   * Page through `api/measures/component_tree`, returning components ranked by
+   * `sortMetric` descending.
+   *
+   * Note that SonarQube caps `component_tree` paging at 10,000 components; a
+   * project larger than that is truncated server-side regardless of
+   * `maxResults`. In practice the ranking makes that harmless — the files that
+   * matter are at the top.
+   */
+  async getComponentTree(projectKey, options) {
+    const maxResults = options.maxResults ?? Number.POSITIVE_INFINITY;
+    const components = [];
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      const result2 = await this.searchComponentTree(projectKey, { ...options, page });
+      components.push(...result2.components);
+      const fetched = result2.paging.pageIndex * result2.paging.pageSize;
+      if (result2.components.length === 0 || components.length >= maxResults || fetched >= result2.paging.total) {
+        break;
+      }
+    }
+    return Number.isFinite(maxResults) ? components.slice(0, maxResults) : components;
+  }
+  // -- duplications ---------------------------------------------------------------
+  /**
+   * Call `GET /api/duplications/show` for one file and resolve the response's
+   * `_ref` indirection.
+   *
+   * The raw payload keeps blocks and file identities in separate structures:
+   * each block carries a `_ref` key into a top-level `files` map. Resolving that
+   * join here means callers get self-describing blocks (`componentKey` + line
+   * range) instead of having to correlate two collections themselves.
+   *
+   * Deliberately not wrapped in `#withOrg`: this endpoint takes only `key`, and
+   * the component key is already project-qualified, so an extra `organization`
+   * parameter is at best ignored and at worst rejected by self-hosted servers.
+   */
+  async getDuplications(componentKey) {
+    const data = await this.#request("GET", "/api/duplications/show", { key: componentKey });
+    const raw = rawDuplicationsResponseSchema.parse(data);
+    const duplications = raw.duplications.map((group) => ({
+      blocks: group.blocks.map((block) => {
+        const file2 = block._ref === null || block._ref === void 0 ? void 0 : raw.files[block._ref];
+        return {
+          componentKey: file2?.key ?? componentKey,
+          path: file2?.name ?? null,
+          projectName: file2?.projectName ?? null,
+          from: block.from,
+          size: block.size
+        };
+      })
+    }));
+    return fileDuplicationsSchema.parse({
+      componentKey,
+      duplicationCount: duplications.length,
+      duplications
+    });
+  }
 };
 
 // src/config.ts
@@ -31719,13 +31853,18 @@ function applyDotEnvFile(envPath, env) {
     const eq = trimmed.indexOf("=");
     if (eq === -1) continue;
     const key = trimmed.slice(0, eq).trim();
-    if (!key || key in env) continue;
+    if (!key || isConfigured(env[key])) continue;
     let value = trimmed.slice(eq + 1).trim();
     if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
       value = value.slice(1, -1);
     }
     env[key] = value;
   }
+}
+function isConfigured(value) {
+  if (value === void 0) return false;
+  const trimmed = value.trim();
+  return trimmed !== "" && !/^\$\{[^}]*\}$/.test(trimmed);
 }
 function expandUserPath(value) {
   const expanded = value.startsWith("~") ? value.replace(/^~/, homedir()) : value;
@@ -31784,7 +31923,7 @@ var settingsSchema = external_exports.object({
 function buildSettings(env = process.env) {
   const cleaned = {};
   for (const [key, value] of Object.entries(env)) {
-    if (typeof value === "string" && value.trim() !== "") cleaned[key] = value;
+    if (isConfigured(value)) cleaned[key] = value;
   }
   const parsed = settingsSchema.safeParse(cleaned);
   if (!parsed.success) {
@@ -32449,6 +32588,56 @@ function registerTools(server, getClient) {
       outputSchema: projectMetricsSchema.shape
     },
     async ({ project_key, metric_keys }) => result(await getClient().getMeasures(project_key, metric_keys ?? DEFAULT_METRIC_KEYS))
+  );
+  server.registerTool(
+    "get_duplicated_files",
+    {
+      title: "Rank files by duplicated lines",
+      description: "List the files in a project ranked by duplicated lines, highest first. Use this to find where duplication actually lives before planning a refactor, instead of guessing from code that merely looks similar. Follow up with get_file_duplications on the top entries to confirm the exact duplicated blocks.",
+      inputSchema: {
+        project_key: external_exports.string().describe("The SonarQube project key."),
+        metric_keys: external_exports.array(external_exports.string()).optional().describe(
+          "Optional explicit list of metric keys to report per file. Defaults to the duplication set (duplicated_lines, duplicated_blocks, duplicated_lines_density) plus ncloc."
+        ),
+        sort_metric: external_exports.string().default("duplicated_lines").describe(
+          "Metric to rank by, descending. Must also appear in metric_keys. Defaults to duplicated_lines \u2014 the metric a duplication-reduction pass is measured in."
+        ),
+        only_with_measures: external_exports.boolean().default(true).describe(
+          "Whether to omit files that have no value for sort_metric. Defaults to true, so clean files do not pad the result."
+        ),
+        max_results: external_exports.number().int().positive().default(100).describe("Upper bound on the number of files returned. Defaults to 100.")
+      },
+      outputSchema: { components: external_exports.array(componentMeasuresSchema) }
+    },
+    async ({ project_key, metric_keys, sort_metric, only_with_measures, max_results }) => {
+      const metricKeys = metric_keys ?? DEFAULT_DUPLICATION_METRIC_KEYS;
+      if (!metricKeys.includes(sort_metric)) {
+        throw new Error(
+          `sort_metric '${sort_metric}' must also appear in metric_keys (got: ${metricKeys.join(", ")}). SonarQube can only rank by a metric it was asked to return.`
+        );
+      }
+      const components = await getClient().getComponentTree(project_key, {
+        metricKeys,
+        sortMetric: sort_metric,
+        withMeasuresOnly: only_with_measures,
+        maxResults: max_results
+      });
+      return result({ components });
+    }
+  );
+  server.registerTool(
+    "get_file_duplications",
+    {
+      title: "Get duplicated blocks for a file",
+      description: "Show the exact duplicated line ranges SonarQube found for a single file, and the other files each range matches. This is the ground truth for a duplication refactor: use it to confirm a match is genuine copy-paste logic before changing anything, and to rule out false targets such as static seed data, generated code, or config literals, which are structurally repetitive but should not be abstracted.",
+      inputSchema: {
+        component_key: external_exports.string().describe(
+          "The fully-qualified SonarQube component key of the file \u2014 the project key, a colon, then the repo-relative path (e.g. my-org_my-repo:src/Services/Report.cs). This is the `component` field on an issue, or the `key` field returned by get_duplicated_files."
+        )
+      },
+      outputSchema: fileDuplicationsSchema.shape
+    },
+    async ({ component_key }) => result(await getClient().getDuplications(component_key))
   );
   server.registerTool(
     "read_file",

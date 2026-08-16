@@ -35,24 +35,23 @@ anything, install dependencies, or build. Inside any Claude Code session:
 /plugin install sonarqube@alqemam-sonarqube
 ```
 
-That gives you the SonarQube tools **and** all three skills in *every* project, not
-just this one. Then set your credentials once, globally, by creating
-`~/.config/sonarqube-mcp/.env` with two lines:
+That gives you the SonarQube tools **and** all four skills in *every* project, not
+just this one.
 
-```ini
-SONARQUBE_URL=https://your-sonarqube-host
-SONARQUBE_TOKEN=squ_your_token_here
-```
+Claude Code then prompts you for two things:
 
-```powershell
-# Windows one-liner, if you prefer
-mkdir "$env:USERPROFILE\.config\sonarqube-mcp" -Force
-"SONARQUBE_URL=https://your-sonarqube-host`nSONARQUBE_TOKEN=squ_your_token_here" |
-  Set-Content "$env:USERPROFILE\.config\sonarqube-mcp\.env" -Encoding utf8
-```
+- **SonarQube URL** — ask a teammate, or use `https://sonarcloud.io` for SonarCloud.
+- **SonarQube user token** — generate it under **My Account → Security → Generate
+  Tokens**, type *User Token*. The input is masked and the token goes into your OS
+  keychain, not into any file in this repo.
 
-Generate the token in SonarQube under **My Account → Security → Generate Tokens**
-(type *User Token*), and ask a teammate for the server URL.
+The organization field only matters on SonarCloud; leave it blank for a self-hosted
+server. Leave the repository-root field blank too — by default the file tools are
+sandboxed to whichever project you launch Claude Code in, which is what you want.
+
+That's the whole setup. If you'd rather manage credentials in a file, you can still
+create `~/.config/sonarqube-mcp/.env` with `SONARQUBE_URL` and `SONARQUBE_TOKEN`
+instead — it fills in anything left blank at the prompt.
 
 Restart Claude Code and run `/mcp` — you should see `sonarqube` connected. **You're
 done; the rest of this guide is for people who want to work on the server itself.**

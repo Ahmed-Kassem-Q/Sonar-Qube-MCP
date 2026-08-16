@@ -1,9 +1,34 @@
 {
   "name": "sonarqube",
-  "description": "Connects Claude Code to SonarQube or SonarCloud. Triage issues, check quality gates, inspect metrics, and drive a confirm-before-write fix workflow against your codebase. Bundles the fix-sonarqube-issues, lead-review, and pre-pr-review skills.",
+  "description": "Connects Claude Code to SonarQube or SonarCloud. Triage issues, check quality gates, inspect metrics, and drive a confirm-before-write fix workflow against your codebase. Bundles the fix-sonarqube-issues, lead-review, pre-pr-review, and reduce-duplication skills.",
   "author": {
     "name": "Alqemam Engineering"
   },
   "homepage": "https://github.com/Ahmed-Kassem-Q/Sonar-Qube-MCP",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "userConfig": {
+    "sonarqube_url": {
+      "type": "string",
+      "title": "SonarQube URL",
+      "description": "Base URL of your SonarQube server, or https://sonarcloud.io for SonarCloud.",
+      "required": true
+    },
+    "sonarqube_token": {
+      "type": "string",
+      "title": "SonarQube user token",
+      "description": "Generate one under My Account > Security > Generate Token. It must be a User Token — a Project Analysis token or a badge token can upload analysis results but cannot read issues, metrics, or duplications, and will fail with HTTP 401.",
+      "sensitive": true,
+      "required": true
+    },
+    "sonarqube_organization": {
+      "type": "string",
+      "title": "Organization key (SonarCloud only)",
+      "description": "Required by SonarCloud, ignored by self-hosted SonarQube. Leave empty if you are not on SonarCloud."
+    },
+    "repo_root": {
+      "type": "directory",
+      "title": "Repository root override",
+      "description": "Optional. The directory the read_file / write_file / search tools are sandboxed to. Leave empty to use whichever project you launch Claude Code in, which is almost always what you want."
+    }
+  }
 }

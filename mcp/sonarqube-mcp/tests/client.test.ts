@@ -268,3 +268,128 @@ describe('error mapping and retries', () => {
     expect(authHeader).toBe(`Basic ${Buffer.from('test-token:', 'utf-8').toString('base64')}`);
   });
 });
+
+describe('component tree', () => {
+  const filePage = (page: number, total: number, keys: string[]) => ({
+    paging: { pageIndex: page, pageSize: keys.length, total },
+    baseComponent: { key: 'proj1', name: 'Project One', measures: [] },
+    components: keys.map((key, index) => ({
+      key,
+      name: key.split('/').pop(),
+      path: key.split(':')[1],
+      qualifier: 'FIL',
+      measures: [{ metric: 'duplicated_lines', value: String(100 - index) }],
+    })),
+  });
+
+  it('ranks files by the sort metric and pages through the results', async () => {
+    const { client, urls } = makeClient((url) => {
+      expect(url.pathname).toBe('/api/measures/component_tree');
+      expect(url.searchParams.get('qualifiers')).toBe('FIL');
+      expect(url.searchParams.get('s')).toBe('metric');
+      expect(url.searchParams.get('metricSort')).toBe('duplicated_lines');
+      expect(url.searchParams.get('asc')).toBe('false');
+      const page = Number(url.searchParams.get('p'));
+      return jsonResponse(
+        page === 1
+          ? filePage(1, 4, ['proj1:a.ts', 'proj1:b.ts'])
+          : filePage(2, 4, ['proj1:c.ts', 'proj1:d.ts']),
+      );
+    });
+
+    const components = await client.getComponentTree('proj1', {
+      metricKeys: ['duplicated_lines'],
+      sortMetric: 'duplicated_lines',
+    });
+
+    expect(urls).toHaveLength(2);
+    expect(components.map((c) => c.key)).toEqual([
+      'proj1:a.ts',
+      'proj1:b.ts',
+      'proj1:c.ts',
+      'proj1:d.ts',
+    ]);
+  });
+
+  it('stops paging once maxResults is reached and truncates', async () => {
+    const { client, urls } = makeClient(() => jsonResponse(filePage(1, 50, ['proj1:a.ts', 'proj1:b.ts'])));
+
+    const components = await client.getComponentTree('proj1', {
+      metricKeys: ['duplicated_lines'],
+      sortMetric: 'duplicated_lines',
+      maxResults: 1,
+    });
+
+    expect(urls).toHaveLength(1);
+    expect(components.map((c) => c.key)).toEqual(['proj1:a.ts']);
+  });
+
+  it('omits the sort parameters when no sort metric is given', async () => {
+    const { client, urls } = makeClient(() => jsonResponse(filePage(1, 1, ['proj1:a.ts'])));
+
+    await client.getComponentTree('proj1', { metricKeys: ['duplicated_lines'] });
+
+    expect(urls[0]?.searchParams.get('s')).toBeNull();
+    expect(urls[0]?.searchParams.get('metricSort')).toBeNull();
+  });
+});
+
+describe('duplications', () => {
+  const duplicationsPayload = {
+    duplications: [
+      {
+        blocks: [
+          { from: 10, size: 25, _ref: '1' },
+          { from: 80, size: 25, _ref: '2' },
+        ],
+      },
+    ],
+    files: {
+      '1': { key: 'proj1:src/A.cs', name: 'src/A.cs', projectName: 'Project One' },
+      '2': { key: 'proj1:src/B.cs', name: 'src/B.cs', projectName: 'Project One' },
+    },
+  };
+
+  it('resolves each block _ref against the files map', async () => {
+    const { client, urls } = makeClient((url) => {
+      expect(url.pathname).toBe('/api/duplications/show');
+      expect(url.searchParams.get('key')).toBe('proj1:src/A.cs');
+      return jsonResponse(duplicationsPayload);
+    });
+
+    const result = await client.getDuplications('proj1:src/A.cs');
+
+    expect(result.duplicationCount).toBe(1);
+    expect(result.duplications[0]?.blocks).toEqual([
+      { componentKey: 'proj1:src/A.cs', path: 'src/A.cs', projectName: 'Project One', from: 10, size: 25 },
+      { componentKey: 'proj1:src/B.cs', path: 'src/B.cs', projectName: 'Project One', from: 80, size: 25 },
+    ]);
+    expect(urls).toHaveLength(1);
+  });
+
+  it('falls back to the queried component for a block with no _ref', async () => {
+    const { client } = makeClient(() =>
+      jsonResponse({ duplications: [{ blocks: [{ from: 1, size: 5 }] }], files: {} }),
+    );
+
+    const result = await client.getDuplications('proj1:src/A.cs');
+    expect(result.duplications[0]?.blocks[0]?.componentKey).toBe('proj1:src/A.cs');
+  });
+
+  it('never sends an organization parameter', async () => {
+    process.env['SONARQUBE_ORGANIZATION'] = 'my-org';
+    clearSettingsCache();
+    const { client, urls } = makeClient(() => jsonResponse(duplicationsPayload));
+
+    await client.getDuplications('proj1:src/A.cs');
+    expect(urls[0]?.searchParams.get('organization')).toBeNull();
+  });
+
+  it('reports an empty result for a file with no duplication', async () => {
+    const { client } = makeClient(() => jsonResponse({ duplications: [], files: {} }));
+
+    const result = await client.getDuplications('proj1:src/Clean.cs');
+    expect(result.duplicationCount).toBe(0);
+    expect(result.duplications).toEqual([]);
+  });
+});

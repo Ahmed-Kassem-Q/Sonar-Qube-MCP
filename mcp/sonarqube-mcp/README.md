@@ -11,8 +11,9 @@ Written in TypeScript on the official
 
 ## What you get
 
-- **6 SonarQube tools** — `get_projects`, `get_project_issues`, `get_critical_issues`,
-  `get_quality_gate`, `get_issue_details`, `get_project_metrics`.
+- **8 SonarQube tools** — `get_projects`, `get_project_issues`, `get_critical_issues`,
+  `get_quality_gate`, `get_issue_details`, `get_project_metrics`,
+  `get_duplicated_files`, `get_file_duplications`.
 - **4 read-only resources** — `sonar://projects`, `sonar://projects/{project_key}`,
   `sonar://projects/{project_key}/issues`, `sonar://projects/{project_key}/metrics`.
 - **3 guided prompts** — `sonar_review`, `pr_review`, `fix_issue` — each one a
@@ -73,12 +74,18 @@ no `npm`, no build. From any Claude Code session:
 /plugin install sonarqube@alqemam-sonarqube
 ```
 
-This installs the MCP server **and** all three skills, available in every project.
+This installs the MCP server **and** all four skills, available in every project.
 The plugin runs `plugin/server/sonarqube-mcp.mjs`, a single self-contained bundle with
 its dependencies compiled in, so it needs no `node_modules`.
 
-Then create `~/.config/sonarqube-mcp/.env` (see
-[Global configuration](#global-configuration)) and restart Claude Code.
+Claude Code prompts for your SonarQube URL and token as part of the install — the token
+field is masked and stored in your OS keychain, not in any settings file. The
+organization and repository-root fields are optional; leave them blank unless you are
+on SonarCloud or deliberately pinning the sandbox to one directory.
+
+No `.env` file is needed for this path. If you already keep one at
+`~/.config/sonarqube-mcp/.env`, it still works and still fills in anything you leave
+blank at the prompt — see [Global configuration](#global-configuration).
 
 ## Installation from source (for contributors)
 

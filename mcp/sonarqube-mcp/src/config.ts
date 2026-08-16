@@ -93,7 +93,17 @@ export function applyDotEnvFiles(
   }
 }
 
-/** Apply one `.env` file, leaving keys that are already set untouched. */
+/**
+ * Apply one `.env` file, leaving keys that are already set untouched.
+ *
+ * A variable set to an empty string counts as *unset* here. The plugin passes
+ * every optional setting through `.mcp.json`'s `env` block as
+ * `${user_config.…}`, and a field the user left blank interpolates to `""` — so
+ * treating "present but empty" as configured would let a blank prompt field
+ * shadow a perfectly good value in `.env`, which reads as the file being
+ * ignored. This also matches {@link buildSettings}, which drops empty strings so
+ * they fall through to defaults.
+ */
 function applyDotEnvFile(envPath: string, env: NodeJS.ProcessEnv): void {
   let raw: string;
   try {
@@ -109,7 +119,7 @@ function applyDotEnvFile(envPath: string, env: NodeJS.ProcessEnv): void {
     if (eq === -1) continue;
 
     const key = trimmed.slice(0, eq).trim();
-    if (!key || key in env) continue;
+    if (!key || isConfigured(env[key])) continue;
 
     let value = trimmed.slice(eq + 1).trim();
     // Strip matching surrounding quotes, if present.
@@ -118,6 +128,30 @@ function applyDotEnvFile(envPath: string, env: NodeJS.ProcessEnv): void {
     }
     env[key] = value;
   }
+}
+
+/**
+ * A value that is set to something usable.
+ *
+ * Two shapes count as *unset* even though the variable exists:
+ *
+ * - **Empty string** — how a blank optional field arrives, and how `.env`
+ *   files conventionally spell "not applicable".
+ * - **An uninterpolated `${...}` placeholder** — when this server runs as a
+ *   Claude Code plugin, `.mcp.json` passes configuration as `${user_config.…}`
+ *   for the host to substitute. If substitution does not happen — an older
+ *   Claude Code, a hand-written `.mcp.json`, a config key that does not match
+ *   the `userConfig` declaration — the literal text arrives as the value.
+ *   Accepting it means the server starts happily with a nonsense URL or token
+ *   and fails later on every call with a connection or auth error that points
+ *   nowhere near the real cause. Treating it as absent lets the `.env` files
+ *   fill the gap, and produces the normal "no credentials configured" message
+ *   when they cannot.
+ */
+function isConfigured(value: string | undefined): value is string {
+  if (value === undefined) return false;
+  const trimmed = value.trim();
+  return trimmed !== '' && !/^\$\{[^}]*\}$/.test(trimmed);
 }
 
 /** Expand a leading `~` and resolve to an absolute path. */
@@ -244,12 +278,12 @@ export interface Settings {
  * @throws {ConfigurationError} if a required variable is missing or invalid.
  */
 export function buildSettings(env: NodeJS.ProcessEnv = process.env): Settings {
-  // Drop empty strings so they fall through to defaults rather than failing
-  // validation — `SONARQUBE_ORGANIZATION=` in a .env file is a common way to
-  // say "not applicable".
+  // Drop empty strings and uninterpolated `${...}` placeholders so they fall
+  // through to defaults rather than failing validation — `SONARQUBE_ORGANIZATION=`
+  // in a .env file is a common way to say "not applicable". See isConfigured.
   const cleaned: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
-    if (typeof value === 'string' && value.trim() !== '') cleaned[key] = value;
+    if (isConfigured(value)) cleaned[key] = value;
   }
 
   const parsed = settingsSchema.safeParse(cleaned);

@@ -145,6 +145,11 @@ export type ProjectMetrics = z.infer<typeof projectMetricsSchema>;
  * Default metrics fetched by `get_project_metrics` when the caller does not
  * specify `metric_keys`. Covers the headline reliability / security /
  * maintainability / coverage / size indicators.
+ *
+ * The duplication set is deliberately the full four rather than density alone:
+ * a duplication-reduction pass is measured in `duplicated_lines`, and density
+ * on its own moves whenever `ncloc` moves, so it cannot show whether a refactor
+ * removed duplication or merely added code around it.
  */
 export const DEFAULT_METRIC_KEYS: readonly string[] = [
   'bugs',
@@ -152,13 +157,102 @@ export const DEFAULT_METRIC_KEYS: readonly string[] = [
   'code_smells',
   'security_hotspots',
   'coverage',
+  'duplicated_lines',
   'duplicated_lines_density',
+  'duplicated_blocks',
+  'duplicated_files',
   'ncloc',
   'reliability_rating',
   'security_rating',
   'sqale_rating',
   'alert_status',
 ];
+
+/**
+ * Metrics fetched by `get_duplicated_files` when the caller does not specify
+ * `metric_keys` — the per-file duplication burden, ranked.
+ */
+export const DEFAULT_DUPLICATION_METRIC_KEYS: readonly string[] = [
+  'duplicated_lines',
+  'duplicated_blocks',
+  'duplicated_lines_density',
+  'ncloc',
+];
+
+/** A component (file, directory, or module) with its measures attached. */
+export const componentMeasuresSchema = z.object({
+  key: z.string(),
+  name: z.string().nullish(),
+  path: z.string().nullish(),
+  qualifier: z.string().nullish(),
+  language: z.string().nullish(),
+  measures: z.array(measureSchema).default([]),
+});
+export type ComponentMeasures = z.infer<typeof componentMeasuresSchema>;
+
+/** Response envelope for `GET /api/measures/component_tree`. */
+export const componentTreePageSchema = z.object({
+  paging: pagingSchema,
+  baseComponent: componentMeasuresSchema.nullish(),
+  components: z.array(componentMeasuresSchema).default([]),
+});
+export type ComponentTreePage = z.infer<typeof componentTreePageSchema>;
+
+/**
+ * One side of a duplicated block, with the `_ref` indirection from
+ * `api/duplications/show` already resolved to a real component key.
+ */
+export const duplicationBlockSchema = z.object({
+  componentKey: z.string(),
+  path: z.string().nullish(),
+  projectName: z.string().nullish(),
+  from: z.number().int(),
+  size: z.number().int(),
+});
+export type DuplicationBlock = z.infer<typeof duplicationBlockSchema>;
+
+/** A group of blocks that SonarQube considers duplicates of one another. */
+export const duplicationGroupSchema = z.object({
+  blocks: z.array(duplicationBlockSchema).default([]),
+});
+export type DuplicationGroup = z.infer<typeof duplicationGroupSchema>;
+
+/** Resolved result of `api/duplications/show` for one file. */
+export const fileDuplicationsSchema = z.object({
+  componentKey: z.string(),
+  duplicationCount: z.number().int(),
+  duplications: z.array(duplicationGroupSchema).default([]),
+});
+export type FileDuplications = z.infer<typeof fileDuplicationsSchema>;
+
+/** Raw `api/duplications/show` payload, before `_ref` resolution. */
+export const rawDuplicationsResponseSchema = z.object({
+  duplications: z
+    .array(
+      z.object({
+        blocks: z
+          .array(
+            z.object({
+              from: z.number().int(),
+              size: z.number().int(),
+              _ref: z.string().nullish(),
+            }),
+          )
+          .default([]),
+      }),
+    )
+    .default([]),
+  files: z
+    .record(
+      z.string(),
+      z.object({
+        key: z.string(),
+        name: z.string().nullish(),
+        projectName: z.string().nullish(),
+      }),
+    )
+    .default({}),
+});
 
 /** Result of a successful `write_file` call. */
 export const writeResultSchema = z.object({

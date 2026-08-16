@@ -2,7 +2,13 @@
   "mcpServers": {
     "sonarqube": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/server/sonarqube-mcp.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/sonarqube-mcp.mjs"],
+      "env": {
+        "SONARQUBE_URL": "${user_config.sonarqube_url}",
+        "SONARQUBE_TOKEN": "${user_config.sonarqube_token}",
+        "SONARQUBE_ORGANIZATION": "${user_config.sonarqube_organization}",
+        "MCP_REPO_ROOT": "${user_config.repo_root}"
+      }
     }
   }
 }

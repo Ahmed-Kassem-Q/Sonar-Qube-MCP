@@ -152,6 +152,65 @@ describe('settings validation', () => {
     expect(env['SONARQUBE_URL']).toBe('https://from-shell.example');
   });
 
+  it('treats a variable set to an empty string as unset', () => {
+    const dir = makeTempDir();
+    const envFile = join(dir, 'a.env');
+    writeFileSync(envFile, 'SONARQUBE_ORGANIZATION=from-file\n');
+
+    // A plugin userConfig field the user left blank interpolates to "" in the
+    // .mcp.json env block; it must not shadow a real value in .env.
+    const env = { SONARQUBE_ORGANIZATION: '' };
+    applyDotEnvFiles([envFile], env);
+
+    expect(env['SONARQUBE_ORGANIZATION']).toBe('from-file');
+  });
+
+  it('treats an uninterpolated ${...} placeholder as unset', () => {
+    const dir = makeTempDir();
+    const envFile = join(dir, 'a.env');
+    writeFileSync(envFile, 'SONARQUBE_TOKEN=from-file\n');
+
+    // What arrives when a host does not substitute .mcp.json's env block.
+    const env = { SONARQUBE_TOKEN: '${user_config.sonarqube_token}' };
+    applyDotEnvFiles([envFile], env);
+
+    expect(env['SONARQUBE_TOKEN']).toBe('from-file');
+  });
+});
+
+describe('uninterpolated plugin placeholders', () => {
+  it('rejects a placeholder URL with the normal configuration error', () => {
+    clearManagedEnv();
+    expect(() =>
+      buildSettings({
+        SONARQUBE_URL: '${user_config.sonarqube_url}',
+        SONARQUBE_TOKEN: '${user_config.sonarqube_token}',
+      }),
+    ).toThrow(ConfigurationError);
+  });
+
+  it('ignores a placeholder for an optional value rather than passing it through', () => {
+    clearManagedEnv();
+    const settings = buildSettings({
+      SONARQUBE_URL: 'https://sonar.example',
+      SONARQUBE_TOKEN: 'real-token',
+      SONARQUBE_ORGANIZATION: '${user_config.sonarqube_organization}',
+    });
+
+    expect(settings.sonarqubeOrganization).toBeUndefined();
+    expect(settings.auth).toEqual({ username: 'real-token', password: '' });
+  });
+
+  it('keeps a legitimate value that merely contains braces', () => {
+    clearManagedEnv();
+    const settings = buildSettings({
+      SONARQUBE_URL: 'https://sonar.example',
+      SONARQUBE_TOKEN: 'squ_${weird}but_real',
+    });
+
+    expect(settings.sonarqubeToken).toBe('squ_${weird}but_real');
+  });
+
   it('includes the global config directory in the search path', () => {
     expect(dotEnvSearchPaths().at(-1)).toBe(globalEnvPath());
     expect(globalEnvPath()).toMatch(/sonarqube-mcp[/\\]\.env$/);
